@@ -60,7 +60,7 @@ SUPPORTED_OSES="Linux Darwin"
 # Customize this section appropriately for your hardware
 case `uname` in
 Linux)
-  DRIVER_AFFINITY="numactl --cpunodebind=1 --membind=1"
+  DRIVER_AFFINITY="numactl --cpunodebind=0 --membind=0"
   APP_AFFINITY="numactl --physcpubind=$CPULIST --membind=0"
   WORK_THREADS=16
   ;;
