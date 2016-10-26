@@ -39,7 +39,7 @@ DURATION=$4
 APP_CMD=$5
 URL=$6
 INSTANCES=$7
-WORK_DIR=$PWD
+WORK_DIR=$(cd $(dirname $0); pwd)
 
 # Select workload driver (client simulator) with DRIVER env variable
 # (default: wrk)
@@ -63,6 +63,10 @@ Linux)
   DRIVER_AFFINITY="numactl --cpunodebind=0 --membind=0"
   APP_AFFINITY="numactl --physcpubind=$CPULIST --membind=0"
   WORK_THREADS=16
+  if [[ $(uname -p) == 's390x' ]]; then
+      DRIVER_AFFINITY=""
+      APP_AFFINITY=""
+  fi
   ;;
 Darwin)
   # Don't know if this is possible on OS X...
@@ -339,10 +343,17 @@ function summarize_driver_output {
   # Post-process driver output
   case $DRIVER in
   jmeter)
+    INTERVALS=10
+    n1=$((DURATION/6 - 2))
+    if [[ $n1 < $INTERVALS ]];then
+        INTERVALS=$n1
+    fi
+
+    echo "Summary from final $INTERVALS intervals of JMeter output:"
     # Cherry-pick useful information from JMeter summary
-    SUMMARY=`grep 'summary +' results.$SUFFIX | tail -n 4 | head -n 3`
-    echo "Summary from final 3 intervals of JMeter output:"
-    echo $SUMMARY | awk '
+    # Example out:
+    # summary +   4838 in 00:00:01 = 6843.0/s Avg:    70 Min:    23 Max:   155
+    grep 'summary +' results.$SUFFIX | tail -n $((INTERVALS+1)) | head -n $INTERVALS | awk '
       BEGIN {
         min=0;
         max=0;
@@ -361,7 +372,8 @@ function summarize_driver_output {
       END { 
         avg=avg/count;
         thruput=thruput/count;
-        print "Min: " min " ms,  Max: " max " ms,  Avg: " avg " ms,  Thruput: " thruput " resp/sec"
+        print "Thruput: " thruput " Requests/sec"
+        print "Latency  " avg "ms " min "ms " max "ms"
       }'
     ;;
   wrk | wrk2)
@@ -418,9 +430,13 @@ function do_sample {
   # Execute driver
   case $DRIVER in
   jmeter)
-    SCRIPT=$URL  # Until I think of something better
-    echo ${DRIVER_PREAMBLE}${DRIVER_AFFINITY} jmeter -n -t ${SCRIPT} -q $WORK_DIR/user.properties -JTHREADS=$NUMCLIENTS -JDURATION=$DURATION -JRAMPUP=0 -JWARMUP=0 | tee results.$NUMCLIENTS
-    ${DRIVER_PREAMBLE}${DRIVER_AFFINITY} jmeter -n -t ${SCRIPT} -q $WORK_DIR/user.properties -JTHREADS=$NUMCLIENTS -JDURATION=$DURATION -JRAMPUP=0 -JWARMUP=0 >> results.$NUMCLIENTS
+    SCRIPT=$WORK_DIR/benchmark.jmx
+    TESTPATH="/$(echo $URL | cut -d'/' -f4)"
+    tmp="$(echo $URL | cut -d'/' -f3)"
+    HOST=$(echo $tmp | cut -d':' -f1)
+    PORT=$(echo $tmp | cut -d':' -f2)
+    echo ${DRIVER_PREAMBLE}${DRIVER_AFFINITY} jmeter -n -t ${SCRIPT} -q $WORK_DIR/user.properties -JTHREADS=$NUMCLIENTS -JDURATION=$DURATION -JRAMPUP=0 -JWARMUP=0 -JHOSTNAME=$HOST -JPORT=$PORT -JTESTPATH=$TESTPATH | tee results.$NUMCLIENTS
+    ${DRIVER_PREAMBLE}${DRIVER_AFFINITY} jmeter -n -t ${SCRIPT} -q $WORK_DIR/user.properties -JTHREADS=$NUMCLIENTS -JDURATION=$DURATION -JRAMPUP=0 -JWARMUP=0 -JHOSTNAME=$HOST -JPORT=$PORT -JTESTPATH=$TESTPATH >> results.$NUMCLIENTS
     ;;
   wrk)
     # Number of connections must be >= threads
