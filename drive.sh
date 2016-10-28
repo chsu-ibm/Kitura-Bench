@@ -19,6 +19,7 @@
 # - wrk (https://github.com/wg/wrk) - highly efficient, variable-rate load generator
 # - wrk2 (https://github.com/giltene/wrk2) - fixed-rate wrk variant with accurate latency stats
 # - jmeter (http://jmeter.apache.org/) - highly customizable Java-based load generator
+# - ab (http://httpd.apache.org/docs/2.4/programs/ab.html) - tool for benchmarking HTTP server
 #
 # 'wrk' and 'wrk2' drive a specific URL. 'jmeter' instead works from a script (.jmx).
 # 'wrk' and 'jmeter' drive variable amounts of load, as fast as the server can respond to it, and
@@ -43,7 +44,7 @@ WORK_DIR=$(cd $(dirname $0); pwd)
 
 # Select workload driver (client simulator) with DRIVER env variable
 # (default: wrk)
-DRIVER_CHOICES="wrk wrk2 jmeter"
+DRIVER_CHOICES="wrk wrk2 jmeter ab"
 #DRIVER="wrk"
 
 # Select profiler with PROFILER env variable
@@ -376,6 +377,14 @@ function summarize_driver_output {
         print "Latency  " avg "ms " min "ms " max "ms"
       }'
     ;;
+  ab)
+      thruput=$(grep 'Requests per second' results.$SUFFIX | awk '{print $4}')
+      avg=$(grep 'Total:' results.$SUFFIX |  awk '{print $3}')
+      min=$(grep 'Total:' results.$SUFFIX |  awk '{print $2}')
+      max=$(grep 'Total:' results.$SUFFIX |  awk '{print $6}')
+      echo "Thruput: $thruput Requests/sec"
+      echo "Latency  ${avg}ms ${min}ms ${max}ms"
+    ;;
   wrk | wrk2)
     # Nothing to do
     ;;
@@ -437,6 +446,12 @@ function do_sample {
     PORT=$(echo $tmp | cut -d':' -f2)
     echo ${DRIVER_PREAMBLE}${DRIVER_AFFINITY} jmeter -n -t ${SCRIPT} -q $WORK_DIR/user.properties -JTHREADS=$NUMCLIENTS -JDURATION=$DURATION -JRAMPUP=0 -JWARMUP=0 -JHOSTNAME=$HOST -JPORT=$PORT -JTESTPATH=$TESTPATH | tee results.$NUMCLIENTS
     ${DRIVER_PREAMBLE}${DRIVER_AFFINITY} jmeter -n -t ${SCRIPT} -q $WORK_DIR/user.properties -JTHREADS=$NUMCLIENTS -JDURATION=$DURATION -JRAMPUP=0 -JWARMUP=0 -JHOSTNAME=$HOST -JPORT=$PORT -JTESTPATH=$TESTPATH >> results.$NUMCLIENTS
+    ;;
+  ab)
+    # Number of connections must be >= threads
+    [[ ${WORK_THREADS} -gt ${NUMCLIENTS} ]] && WORK_THREADS=${NUMCLIENTS}
+    echo ${DRIVER_PREAMBLE}${DRIVER_AFFINITY} ab -l -s 30 -t ${DURATION} -n 50000000 -c ${NUMCLIENTS} ${URL} | tee results.$NUMCLIENTS
+    ${DRIVER_PREAMBLE}${DRIVER_AFFINITY} ab -l -t ${DURATION} -n 50000000 -c ${NUMCLIENTS} ${URL} 2>&1 | tee -a results.$NUMCLIENTS
     ;;
   wrk)
     # Number of connections must be >= threads
