@@ -12,7 +12,6 @@ if [ -z "$1" ]; then
   echo "  ITERATIONS: number of repetitions of each implementation (default: 5)"
   echo "  URL: url to drive load against (default: http://127.0.0.1:8080/plaintext)"
   echo "  CPUS: list of CPUs to affinitize to (default: 0,1,2,3)"
-  echo "  CLIENTS: # of concurrent clients (default: 128)"
   echo "  DURATION: time (sec) to apply load (default: 30)"
   echo "  SLEEP: time (sec) to wait between tests (default: 5)"
   echo "  RUNNAME: name of directory to store results (default: current date and time)"
@@ -40,13 +39,6 @@ else
   echo "Using URL: $URL"
 fi
 
-if [ -z "$CLIENTS" ]; then
-  CLIENTS=128
-  echo "Using default CLIENTS: $CLIENTS"
-else
-  echo "Using CLIENTS: $CLIENTS"
-fi
-
 if [ -z "$DURATION" ]; then
   DURATION=30
   echo "Using default DURATION: $DURATION"
@@ -71,6 +63,7 @@ for implstr in $*; do
   # Parse impl string into executable,instances
   impl=`echo $implstr | cut -d',' -f1`
   instances=`echo $implstr | cut -d',' -f2 -s`
+  connections=`echo $implstr | cut -d',' -f3`
   if [ ! -e "$impl" ]; then
     echo "Error: $impl is not executable"
     exit 1
@@ -78,6 +71,7 @@ for implstr in $*; do
   let IMPLC=$IMPLC+1
   IMPLS[$IMPLC]=$impl
   INSTANCES[$IMPLC]=$instances
+  CLIENTS[$IMPLC]=$connections
   echo "Implementation $IMPLC: ${IMPLS[$IMPLC]}"
 done
 
@@ -95,9 +89,10 @@ for i in `seq 1 $ITERATIONS`; do
     if [ -z "$RECOMPARE" ]; then
       sleep $SLEEP  # Allow system time to settle
       # Usage: ./drive.sh <run name> <cpu list> <clients list> <duration> <app> <url> <instances>
-      ./drive.sh compare_$run $CPUS $CLIENTS $DURATION ${IMPLS[$j]} $URL ${INSTANCES[$j]} > $out 2>&1
+      echo ./drive.sh compare_$run $CPUS ${CLIENTS[$j]} $DURATION ${IMPLS[$j]} $URL ${INSTANCES[$j]} > $out
+      ./drive.sh compare_$run $CPUS ${CLIENTS[$j]} $DURATION ${IMPLS[$j]} $URL ${INSTANCES[$j]} >> $out 2>&1
     else
-      echo ./drive.sh compare_$run $CPUS $CLIENTS $DURATION ${IMPLS[$j]} $URL ${INSTANCES[$j]}
+      echo ./drive.sh compare_$run $CPUS ${CLIENTS[$j]} $DURATION ${IMPLS[$j]} $URL ${INSTANCES[$j]}
     fi
     # Note, removal of carriage return chars (^M) required when client output comes from 'ssh -t'
     THROUGHPUT[$runNo]=`grep 'Requests/sec' $out | awk '{gsub("\\r", ""); print $2}'`
